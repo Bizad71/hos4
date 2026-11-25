@@ -1,39 +1,373 @@
-/* Hospital Follow-up CRM — keeps the original localStorage key and legacy fields. */
-const HEADERS=['ردیف','عنوان فعالیت','توضیحات','ایجاد کننده','انجام دهنده','زمان ایجاد','زمان یادآوری','زمان انجام','برچسب','تاخیر بر اساس روز','تاخیر بر اساس ساعت','لیست بورد','چک‌لیست'];
-const KEY='hospital_activity_manager_v1';
-let tasks=[],page=1,pageSize=25,toastTimer;
-const $=id=>document.getElementById(id);
-const fa=n=>Number(n||0).toLocaleString('fa-IR');
-const val=v=>v===null||v===undefined?'':String(v).trim();
-const newId=()=>Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
-const selectedChecks=()=>[...document.querySelectorAll('input[name="activityCheck"]:checked')].map(x=>x.value);
-function normalizeChecks(v){if(Array.isArray(v))return v.map(val).filter(Boolean);if(!val(v))return [];return val(v).split(/[،,|؛]/).map(x=>x.trim()).filter(Boolean)}
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY)||'[]');tasks=Array.isArray(d)?d:[]}catch(e){tasks=[]}tasks=tasks.map(t=>({...t,'چک‌لیست':normalizeChecks(t['چک‌لیست'])}))}
-function save(){localStorage.setItem(KEY,JSON.stringify(tasks));$('saveState').innerHTML='<i></i> ذخیره شد روی همین دستگاه'}
-function toast(s){const t=$('toast');t.textContent=s;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600)}
-function parseJalali(s){s=val(s).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));const m=s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?/);if(!m)return null;let y=+m[1],mo=+m[2],d=+m[3];if(mo<1||mo>12||d<1||d>31)return null;return {y,mo,d,h:+(m[4]||0),mi:+(m[5]||0),key:y*100000000+mo*1000000+d*10000+(+(m[4]||0))*100+(+(m[5]||0))}}
-function todayJ(){const p=new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn',{year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const o={};p.forEach(x=>o[x.type]=x.value);return `${o.year}/${o.month}/${o.day}`}
-function jalaliAfter(days){const d=new Date();d.setDate(d.getDate()+Number(days));const p=new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn',{year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);const o={};p.forEach(x=>o[x.type]=x.value);return `${o.year}/${o.month}/${o.day}`}
-function status(t){if(val(t['زمان انجام']))return 'done';const r=parseJalali(t['زمان یادآوری']);if(!r)return 'open';const now=parseJalali(todayJ());const day=r.y*10000+r.mo*100+r.d,td=now.y*10000+now.mo*100+now.d;if(day<td)return 'late';if(day===td)return 'today';return 'open'}
-function statusText(s){return ({done:'انجام‌شده',late:'عقب‌افتاده',today:'یادآوری امروز',open:'در انتظار انجام'})[s]}
-function updateStats(){let c={done:0,late:0,today:0};tasks.forEach(t=>{let s=status(t);if(c[s]!==undefined)c[s]++});$('totalCount').textContent=fa(tasks.length);$('todayCount').textContent=fa(c.today);$('lateCount').textContent=fa(c.late);$('doneCount').textContent=fa(c.done)}
-function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function fillFilters(){const boards=[...new Set(tasks.map(t=>val(t['لیست بورد'])).filter(Boolean))].sort();const tags=[...new Set(tasks.map(t=>val(t['برچسب'])).filter(Boolean))].sort();const set=(id,arr,all)=>{let el=$(id),old=el.value;el.innerHTML=`<option value="">${all}</option>`+arr.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(arr.includes(old))el.value=old};set('boardFilter',boards,'همه بوردها');set('tagFilter',tags,'همه برچسب‌ها')}
-function filtered(){let q=val($('searchInput').value).toLocaleLowerCase(),sf=$('statusFilter').value,bf=$('boardFilter').value,tf=$('tagFilter').value;let a=tasks.filter(t=>{let s=status(t),hay=[...HEADERS.slice(1).filter(h=>h!=='چک‌لیست').map(h=>val(t[h])),normalizeChecks(t['چک‌لیست']).join(' ')].join(' ').toLocaleLowerCase();return(!q||hay.includes(q))&&(sf==='all'||(sf==='open'&&s==='open')||(sf==='today'&&s==='today')||(sf==='late'&&s==='late')||(sf==='done'&&s==='done')||(sf==='no-date'&&!val(t['زمان یادآوری'])&&s!=='done'))&&(!bf||val(t['لیست بورد'])===bf)&&(!tf||val(t['برچسب'])===tf)});let sort=$('sortSelect').value;a.sort((x,y)=>{if(sort==='title')return val(x['عنوان فعالیت']).localeCompare(val(y['عنوان فعالیت']),'fa');if(sort==='newest'||sort==='oldest'){let xx=parseJalali(x['زمان ایجاد'])?.key||0,yy=parseJalali(y['زمان ایجاد'])?.key||0;return sort==='newest'?yy-xx:xx-yy}let xx=parseJalali(x['زمان یادآوری'])?.key||Number.MAX_SAFE_INTEGER,yy=parseJalali(y['زمان یادآوری'])?.key||Number.MAX_SAFE_INTEGER;return xx-yy});return a}
-function render(){updateStats();fillFilters();let a=filtered(),pages=Math.max(1,Math.ceil(a.length/pageSize));page=Math.min(page,pages);let start=(page-1)*pageSize,rows=a.slice(start,start+pageSize);$('taskBody').innerHTML=rows.map(t=>{let s=status(t),checks=normalizeChecks(t['چک‌لیست']);return `<tr><td><span class="status ${s}">${statusText(s)}</span></td><td class="title-cell">${esc(t['عنوان فعالیت'])}</td><td class="check-cell">${checks.length?checks.map(x=>`<span class="check-tag">${esc(x)}</span>`).join(' '):'—'}</td><td class="desc-cell">${esc(t['توضیحات'])||'—'}</td><td class="date-cell">${esc(t['زمان یادآوری']||'—')}</td><td>${t['برچسب']?`<span class="tag">${esc(t['برچسب'])}</span>`:'—'}</td><td>${esc(t['لیست بورد']||'—')}</td><td><div class="row-actions"><button class="mini-btn" data-act="edit" data-id="${esc(t._id)}">ویرایش</button>${s==='done'?'<button class="mini-btn" data-act="reopen" data-id="'+esc(t._id)+'">بازگشایی</button>':'<button class="mini-btn" data-act="done" data-id="'+esc(t._id)+'">انجام شد</button>'}<button class="mini-btn delete" data-act="delete" data-id="${esc(t._id)}">حذف</button></div></td></tr>`}).join('');$('emptyState').hidden=rows.length>0;$('rangeInfo').textContent=`نمایش ${fa(rows.length)} مورد از ${fa(a.length)} مورد`;$('resultCount').textContent=`${fa(a.length)} مورد`;$('pageInfo').textContent=`${fa(page)} / ${fa(pages)}`;$('prevPage').disabled=page<=1;$('nextPage').disabled=page>=pages}
-function setChecks(values){const set=new Set(normalizeChecks(values));document.querySelectorAll('input[name="activityCheck"]').forEach(x=>x.checked=set.has(x.value))}
-function openModal(t){$('taskForm').reset();$('editId').value=t?._id||'';$('modalTitle').textContent=t?'ویرایش فعالیت':'ثبت فعالیت جدید';$('fTitle').value=t?.['عنوان فعالیت']||'';$('fDesc').value=t?.['توضیحات']||'';$('fCreator').value=t?.['ایجاد کننده']||'';$('fAssignee').value=t?.['انجام دهنده']||'';$('fCreated').value=t?.['زمان ایجاد']||todayJ();$('fReminder').value=t?.['زمان یادآوری']||'';$('fDone').value=t?.['زمان انجام']||'';$('fTag').value=t?.['برچسب']||'';$('fDelayDays').value=t?.['تاخیر بر اساس روز']||'';$('fDelayHours').value=t?.['تاخیر بر اساس ساعت']||'';$('fBoard').value=t?.['لیست بورد']||'';setChecks(t?.['چک‌لیست']||[]);$('modalBackdrop').hidden=false;$('fTitle').focus()}
-function closeModal(){$('modalBackdrop').hidden=true}
-function formRow(){return {'عنوان فعالیت':$('fTitle').value.trim(),'توضیحات':$('fDesc').value.trim(),'ایجاد کننده':$('fCreator').value.trim(),'انجام دهنده':$('fAssignee').value.trim(),'زمان ایجاد':$('fCreated').value.trim(),'زمان یادآوری':$('fReminder').value.trim(),'زمان انجام':$('fDone').value.trim(),'برچسب':$('fTag').value.trim(),'تاخیر بر اساس روز':$('fDelayDays').value.trim(),'تاخیر بر اساس ساعت':$('fDelayHours').value.trim(),'لیست بورد':$('fBoard').value.trim(),'چک‌لیست':selectedChecks()}}
-function exportExcel(){if(!window.XLSX){toast('کتابخانه اکسل بارگذاری نشده؛ اتصال اینترنت را بررسی کن.');return}const data=[HEADERS,...tasks.map((t,i)=>HEADERS.map(h=>h==='ردیف'?(t['ردیف']??i+1):h==='چک‌لیست'?normalizeChecks(t[h]).join('، '):(t[h]??'')))];const ws=XLSX.utils.aoa_to_sheet(data);ws['!cols']=[{wch:8},{wch:45},{wch:75},{wch:22},{wch:22},{wch:20},{wch:20},{wch:20},{wch:28},{wch:18},{wch:18},{wch:24},{wch:65}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'فعالیت‌ها');XLSX.writeFile(wb,'گزارش-فعالیت-بیمارستان‌ها.xlsx');toast('فایل اکسل آماده شد.')}
-function importExcel(file){if(!window.XLSX){toast('کتابخانه اکسل بارگذاری نشده؛ اتصال اینترنت را بررسی کن.');return}const reader=new FileReader();reader.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:false});const ws=wb.Sheets[wb.SheetNames[0]];const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});if(!matrix.length)throw Error('فایل خالی است');let first=matrix[0].map(x=>val(x));let hasHeader=first.includes('عنوان فعالیت');let header=hasHeader?first:HEADERS;let start=hasHeader?1:0;let added=0;for(let i=start;i<matrix.length;i++){let r=matrix[i];if(!r||r.every(x=>val(x)===''))continue;let t={_id:newId()};HEADERS.forEach((h,j)=>{if(h==='ردیف')t[h]=val(r[header.indexOf(h)]??r[0]??i);else{let ix=header.indexOf(h);let raw=val(r[ix>=0?ix:j]??'');t[h]=h==='چک‌لیست'?normalizeChecks(raw):raw}});if(!t['عنوان فعالیت'])continue;tasks.push(t);added++}save();page=1;render();toast(`${fa(added)} ردیف به اطلاعات اضافه شد.`)}catch(err){console.error(err);toast('خواندن فایل ناموفق بود؛ قالب ستون‌ها را بررسی کن.')}};reader.readAsArrayBuffer(file)}
-function template(){if(!window.XLSX){toast('کتابخانه اکسل بارگذاری نشده است.');return}let ws=XLSX.utils.aoa_to_sheet([HEADERS]);let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'فعالیت‌ها');XLSX.writeFile(wb,'قالب-ورود-فعالیت‌ها.xlsx')}
-$('addBtn').onclick=()=>openModal();$('closeModal').onclick=closeModal;$('cancelModal').onclick=closeModal;$('modalBackdrop').addEventListener('click',e=>{if(e.target===$('modalBackdrop'))closeModal()});
-$('clearChecks').onclick=()=>setChecks([]);
-document.querySelectorAll('[data-days]').forEach(b=>b.addEventListener('click',()=>{$('fReminder').value=jalaliAfter(b.dataset.days);$('fReminder').focus()}));
-$('taskForm').onsubmit=e=>{e.preventDefault();let row=formRow();if(!row['عنوان فعالیت'])return;let id=$('editId').value;if(id){let t=tasks.find(x=>x._id===id);if(t)Object.assign(t,row);toast('فعالیت ویرایش شد.')}else{let max=Math.max(0,...tasks.map(t=>Number(t['ردیف'])||0));tasks.unshift({_id:newId(),'ردیف':max+1,...row});toast('فعالیت جدید ثبت شد.')}save();closeModal();page=1;render()};
-$('taskBody').onclick=e=>{let b=e.target.closest('button[data-act]');if(!b)return;let t=tasks.find(x=>x._id===b.dataset.id);if(!t)return;let a=b.dataset.act;if(a==='edit'){openModal(t);return}if(a==='done'){t['زمان انجام']=todayJ();toast('فعالیت به‌عنوان انجام‌شده ثبت شد.')}if(a==='reopen'){t['زمان انجام']='';toast('فعالیت دوباره باز شد.')}if(a==='delete'){if(!confirm('این ردیف حذف شود؟'))return;tasks=tasks.filter(x=>x._id!==t._id);toast('ردیف حذف شد.')}save();render()};
-['searchInput','statusFilter','boardFilter','tagFilter','sortSelect'].forEach(id=>$(id).addEventListener(id==='searchInput'?'input':'change',()=>{page=1;render()}));
-$('prevPage').onclick=()=>{page--;render()};$('nextPage').onclick=()=>{page++;render()};$('clearFilters').onclick=()=>{$('searchInput').value='';$('statusFilter').value='all';$('boardFilter').value='';$('tagFilter').value='';$('sortSelect').value='reminder';page=1;render()};
-$('exportBtn').onclick=exportExcel;$('templateBtn').onclick=template;$('importBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=e=>{if(e.target.files[0])importExcel(e.target.files[0]);e.target.value=''};
-load();render();
+'use strict';
+
+/* ================= ابزارهای تاریخ شمسی ================= */
+const fl = Math.floor;
+const $ = s => document.querySelector(s);
+const pd = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const pad = n => String(n).padStart(2, '0');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function g2j(gy, gm, gd) {
+  const m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334], y2 = gm > 2 ? gy + 1 : gy;
+  let d = 355666 + 365 * gy + fl((y2 + 3) / 4) - fl((y2 + 99) / 100) + fl((y2 + 399) / 400) + gd + m[gm - 1];
+  let jy = -1595 + 33 * fl(d / 12053); d %= 12053;
+  jy += 4 * fl(d / 1461); d %= 1461;
+  if (d > 365) { jy += fl((d - 1) / 365); d = (d - 1) % 365; }
+  return [jy, d < 186 ? 1 + fl(d / 31) : 7 + fl((d - 186) / 30), 1 + (d < 186 ? d % 31 : (d - 186) % 30)];
+}
+function j2g(jy, jm, jd) {
+  jy += 1595;
+  let d = -355668 + 365 * jy + fl(jy / 33) * 8 + fl((jy % 33 + 3) / 4) + jd + (jm < 7 ? (jm - 1) * 31 : (jm - 7) * 30 + 186);
+  let gy = 400 * fl(d / 146097); d %= 146097;
+  if (d > 36524) { d--; gy += 100 * fl(d / 36524); d %= 36524; if (d >= 365) d++; }
+  gy += 4 * fl(d / 1461); d %= 1461;
+  if (d > 365) { gy += fl((d - 1) / 365); d = (d - 1) % 365; }
+  let gd = d + 1;
+  const a = [0, 31, (gy % 4 == 0 && gy % 100 != 0) || gy % 400 == 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let gm = 0; while (gm < 13 && gd > a[gm]) gd -= a[gm++];
+  return [gy, gm, gd];
+}
+const dayNum = (y, m, d) => { const [a, b, c] = j2g(y, m, d); return Math.round(Date.UTC(a, b - 1, c) / 864e5); };
+const monthLen = (y, m) => m <= 6 ? 31 : m <= 11 ? 30 : dayNum(y + 1, 1, 1) - dayNum(y, 12, 1);
+/* ستون روز در هفته: شنبه = 0 ... جمعه = 6 */
+const colOf = (y, m, d) => (new Date(dayNum(y, m, d) * 864e5).getUTCDay() + 1) % 7;
+const key = (y, m, d) => `${y}/${pad(m)}/${pad(d)}`;
+const parseKey = k => k.split('/').map(Number);
+const todayJ = () => { const t = new Date(); return g2j(t.getFullYear(), t.getMonth() + 1, t.getDate()); };
+
+const MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+const WD = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
+const PROVINCES = ['آذربایجان شرقی', 'آذربایجان غربی', 'اردبیل', 'اصفهان', 'البرز', 'ایلام', 'بوشهر', 'تهران', 'چهارمحال و بختیاری', 'خراسان جنوبی', 'خراسان رضوی', 'خراسان شمالی', 'خوزستان', 'زنجان', 'سمنان', 'سیستان و بلوچستان', 'فارس', 'قزوین', 'قم', 'کردستان', 'کرمان', 'کرمانشاه', 'کهگیلویه و بویراحمد', 'گلستان', 'گیلان', 'لرستان', 'مازندران', 'مرکزی', 'هرمزگان', 'همدان', 'یزد'];
+const dateLabel = k => { const [y, m, d] = parseKey(k); return `${WD[colOf(y, m, d)]} ${pd(k)}`; };
+
+/* ================= ذخیره‌سازی ================= */
+const KEY = 'taskcal_v1';
+let tasks = [];
+try { tasks = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { tasks = []; }
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) { alert('ذخیره‌سازی در مرورگر ممکن نیست؛ از «پشتیبان‌گیری» استفاده کنید.'); } };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* ================= وضعیت صفحه ================= */
+const [TY, TM, TD] = todayJ();
+let view = [TY, TM];
+let editing = null;            // شناسه کاری که در حال ویرایش است (null = کار جدید)
+let pv = [TY, TM];             // ماه نمایش‌داده‌شده در انتخاب‌گر تاریخ
+
+const byDate = (exceptId = null) => {
+  const map = {};
+  for (const t of tasks) if (t.id !== exceptId) (map[t.date] = map[t.date] || []).push(t);
+  return map;
+};
+const level = c => c === 0 ? 0 : c <= 5 ? 1 : c <= 10 ? 2 : c <= 15 ? 3 : 4;
+const statusClass = s => /پاسخ/.test(s) ? 's-na' : /کاتالوگ/.test(s) ? 's-cat' : /قطع|بدون/.test(s) ? 's-cut' : /پیگیری/.test(s) ? 's-fu' : '';
+const statusOrder = s => {
+  const v = String(s || '');
+  if (/کاتالوگ/.test(v)) return 0;
+  if (/پاسخ/.test(v)) return 1;
+  if (/آماده تماس/.test(v)) return 2;
+  return 3;
+};
+const cmp = (a, b) => statusOrder(a.status) - statusOrder(b.status) ||
+  (a.time || '99:99').localeCompare(b.time || '99:99') || a.name.localeCompare(b.name, 'fa');
+const statusCounts = list => ({
+  catalog: list.filter(t => /کاتالوگ/.test(t.status || '')).length,
+  unanswered: list.filter(t => /پاسخ/.test(t.status || '')).length,
+  ready: list.filter(t => /آماده تماس/.test(t.status || '')).length,
+  other: list.filter(t => !/کاتالوگ|پاسخ|آماده تماس/.test(t.status || '')).length
+});
+const chipHtml = t => `<button class="chip ${statusClass(t.status)} ${t.done ? 'done' : ''}" data-id="${t.id}" title="${esc(t.name)}"><i></i><span>${esc(t.name)}</span></button>`;
+
+/* ================= رسم ماه ================= */
+function render() {
+  const [y, m] = view, len = monthLen(y, m), off = colOf(y, m, 1), map = byDate();
+  $('#monthTitle').textContent = `${MONTHS[m - 1]} ${pd(y)}`;
+  let html = '', total = 0, done = 0;
+  for (let i = 0; i < off; i++) html += '<div class="day empty"></div>';
+  for (let d = 1; d <= len; d++) {
+    const k = key(y, m, d), list = (map[k] || []).slice().sort(cmp), c = list.length;
+    total += c; done += list.filter(t => t.done).length;
+    const fri = (off + d - 1) % 7 === 6, isT = y === TY && m === TM && d === TD;
+    html += `<div class="day l${level(c)} ${fri ? 'fri' : ''} ${isT ? 'today' : ''}" data-date="${k}">
+      <div class="dh"><span class="dn">${pd(d)}</span>
+        <span class="cnt ${c ? '' : 'zero'}" data-more="${k}" title="نمایش همه کارهای این روز">${pd(c)} کار</span>
+        <button class="add" data-add="${k}" title="افزودن کار به این روز">+</button></div>
+      <div class="chips">${list.slice(0, 3).map(chipHtml).join('')}${c > 3 ? `<button class="more" data-more="${k}">+${pd(c - 3)} کار دیگر</button>` : ''}</div>
+    </div>`;
+  }
+  $('#grid').innerHTML = html;
+  $('#grid').style.gridTemplateRows = `repeat(${Math.ceil((off + len) / 7)}, minmax(0, 1fr))`;
+  $('#monthStat').textContent = `${pd(total)} کار در این ماه · ${pd(done)} انجام‌شده`;
+}
+
+function shiftMonth(delta) {
+  let [y, m] = view; m += delta;
+  if (m > 12) { m = 1; y++; } else if (m < 1) { m = 12; y--; }
+  view = [y, m]; render();
+}
+
+/* ================= پنجره شناور ================= */
+function showOverlay() { $('#ov').hidden = false; }
+function closeDlg() { $('#ov').hidden = true; $('#picker').hidden = true; }
+
+function setDate(k) {
+  const b = $('#fDate');
+  b.dataset.value = k || '';
+  b.textContent = k ? dateLabel(k) : 'انتخاب تاریخ';
+}
+
+function openEditor(id, date) {
+  editing = id;
+  const t = id ? tasks.find(x => x.id === id) : null;
+  $('#dlgTitle').textContent = t ? 'ویرایش کار' : 'کار جدید';
+  const f = { Name: 'name', Type: 'type', Status: 'status', Province: 'province', City: 'city', Phone: 'phone', Phone2: 'phone2', Contact: 'contact', Role: 'role', Mobile: 'mobile', Dept: 'dept', Addr: 'addr', Notes: 'notes', Time: 'time' };
+  for (const [el, k] of Object.entries(f)) {
+    const node = $('#f' + el);
+    node.value = t ? (t[k] ?? '') : (k === 'type' ? 'بیمارستان' : k === 'status' ? 'آماده تماس' : '');
+  }
+  $('#fDone').checked = !!(t && t.done);
+  resetActivityComposer();
+  setDate(t ? t.date : (date || key(TY, TM, TD)));
+  $('#btnDelete').hidden = !t;
+  $('#dayList')?.remove();
+  $('#statsPanel')?.remove();
+  $('.form').hidden = false; $('.dlg-foot').hidden = false;
+  $('#picker').hidden = true;
+  showOverlay();
+  if (!t) $('#fName').focus();
+}
+
+function openDayList(k) {
+  const list = tasks.filter(t => t.date === k).sort(cmp);
+  $('#dlgTitle').textContent = `کارهای ${dateLabel(k)} (${pd(list.length)} کار)`;
+  $('.form').hidden = true; $('.dlg-foot').hidden = true;
+  $('#dayList')?.remove();
+  $('#statsPanel')?.remove();
+  const box = document.createElement('div');
+  box.id = 'dayList'; box.className = 'daylist';
+  box.innerHTML = (list.map(chipHtml).join('') || '<div class="stat">برای این روز کاری ثبت نشده.</div>') +
+    `<button class="primary" data-add="${k}" style="align-self:flex-start;margin-top:8px">+ کار جدید برای این روز</button>`;
+  $('#dlg').appendChild(box);
+  showOverlay();
+}
+
+function resetActivityComposer() {
+  const panel = $('#activityComposer');
+  if (!panel) return;
+  panel.hidden = true;
+  panel.querySelectorAll('input[type="checkbox"]').forEach(x => x.checked = false);
+  $('#activityCustom').value = '';
+}
+
+function applyActivityNote() {
+  const selected = [...$('#activityComposer').querySelectorAll('input[type="checkbox"]:checked')].map(x => x.value);
+  const custom = $('#activityCustom').value.trim();
+  if (!selected.length && !custom) {
+    alert('حداقل یک گزینه را انتخاب کن یا توضیح دلخواه بنویس.');
+    return;
+  }
+  const [y, m, d] = todayJ();
+  const dateText = `${y}/${pad(m)}/${pad(d)}`;
+  const details = [...selected, custom].filter(Boolean).join('، ');
+  const line = `در تاریخ ${dateText} ${details}`;
+  const notes = $('#fNotes');
+  notes.value = notes.value.trim() ? `${notes.value.trim()}\n${line}` : line;
+  resetActivityComposer();
+  notes.scrollTop = notes.scrollHeight;
+}
+
+function saveTask() {
+  const name = $('#fName').value.trim(), date = $('#fDate').dataset.value;
+  if (!name) { $('#fName').focus(); $('#fName').style.outline = '2px solid var(--rd)'; return; }
+  if (!date) { $('#picker').hidden = false; renderPicker(); return; }
+  $('#fName').style.outline = '';
+  const data = {
+    name, type: $('#fType').value, status: $('#fStatus').value, province: $('#fProvince').value.trim(), city: $('#fCity').value.trim(),
+    phone: $('#fPhone').value.trim(), phone2: $('#fPhone2').value.trim(), contact: $('#fContact').value.trim(), role: $('#fRole').value.trim(),
+    mobile: $('#fMobile').value.trim(), dept: $('#fDept').value.trim(), addr: $('#fAddr').value.trim(), notes: $('#fNotes').value.trim(),
+    date, time: $('#fTime').value, done: $('#fDone').checked
+  };
+  if (editing) Object.assign(tasks.find(x => x.id === editing), data);
+  else tasks.push({ id: uid(), ...data });
+  persist(); closeDlg();
+  const [y, m] = parseKey(date); view = [y, m];   // ماهِ کار ذخیره‌شده را نشان بده
+  render();
+}
+
+function deleteTask() {
+  if (!editing || !confirm('این کار حذف شود؟')) return;
+  tasks = tasks.filter(x => x.id !== editing);
+  persist(); closeDlg(); render();
+}
+
+/* ================= انتخاب تاریخ با عدد کارهای هر روز ================= */
+function renderPicker() {
+  const [y, m] = pv, len = monthLen(y, m), off = colOf(y, m, 1);
+  const map = byDate(editing), sel = $('#fDate').dataset.value;
+  $('#pkTitle').textContent = `${MONTHS[m - 1]} ${pd(y)}`;
+  let html = '';
+  for (let i = 0; i < off; i++) html += '<div class="pk-day empty"></div>';
+  for (let d = 1; d <= len; d++) {
+    const k = key(y, m, d), c = (map[k] || []).length, fri = (off + d - 1) % 7 === 6;
+    html += `<button type="button" class="pk-day l${level(c)} ${fri ? 'fri' : ''} ${y === TY && m === TM && d === TD ? 'today' : ''} ${k === sel ? 'sel' : ''}" data-pick="${k}">
+      <span>${pd(d)}</span><small class="${c ? '' : 'z'}">${pd(c)}</small></button>`;
+  }
+  $('#pkGrid').innerHTML = html;
+}
+function shiftPicker(delta) {
+  let [y, m] = pv; m += delta;
+  if (m > 12) { m = 1; y++; } else if (m < 1) { m = 12; y--; }
+  pv = [y, m]; renderPicker();
+}
+
+
+/* ================= جستجو و آمار ================= */
+const SEARCH_FIELDS = ['name','type','status','province','city','phone','phone2','contact','role','mobile','dept','addr','notes','date'];
+function searchTasks(q) {
+  const needle = q.trim().toLocaleLowerCase('fa');
+  if (!needle) return [];
+  return tasks.filter(t => SEARCH_FIELDS.some(k => String(t[k] ?? '').toLocaleLowerCase('fa').includes(needle))).sort(cmp);
+}
+function renderSearchResults(q) {
+  const panel = $('#searchResults');
+  const found = searchTasks(q);
+  if (!q.trim()) { panel.hidden = true; panel.innerHTML = ''; return; }
+  panel.hidden = false;
+  panel.innerHTML = found.length
+    ? found.slice(0, 30).map(t => `<button class="search-result" data-search-id="${esc(t.id)}"><strong>${esc(t.name)}</strong><span>${esc(t.status || 'بدون وضعیت')} · ${esc(t.city || '')} · ${esc(t.date || '')}</span></button>`).join('') +
+      (found.length > 30 ? `<div class="search-foot">${pd(found.length)} نتیجه؛ ۳۰ مورد اول نمایش داده شده</div>` : '')
+    : '<div class="search-empty">موردی پیدا نشد.</div>';
+}
+function showStats() {
+  const counts = statusCounts(tasks);
+  const monthMap = new Map(), dateMap = new Map();
+  for (const t of tasks) {
+    const [y,m] = parseKey(t.date);
+    const mk = `${y}/${pad(m)}`;
+    monthMap.set(mk, (monthMap.get(mk) || 0) + 1);
+    dateMap.set(t.date, (dateMap.get(t.date) || 0) + 1);
+  }
+  const months = [...monthMap.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+  const dates = [...dateMap.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+  const maxMonth = Math.max(1, ...months.map(x => x[1]));
+  const maxStatus = Math.max(1, counts.catalog, counts.unanswered, counts.ready, counts.other);
+  const maxDateCount = Math.max(0, ...dates.map(x => x[1]));
+  const minDateCount = dates.length ? Math.min(...dates.map(x => x[1])) : 0;
+  const busiest = dates.filter(x => x[1] === maxDateCount);
+  const quietest = dates.filter(x => x[1] === minDateCount);
+  $('#dlgTitle').textContent = 'آمار کارها';
+  $('.form').hidden = true; $('.dlg-foot').hidden = true;
+  $('#dayList')?.remove(); $('#statsPanel')?.remove();
+  const panel = document.createElement('div');
+  panel.id = 'statsPanel'; panel.className = 'stats-panel';
+  const statusRows = [
+    ['کاتالوگ ارسال شد', counts.catalog, 'bar-green'],
+    ['تماس بی‌پاسخ', counts.unanswered, 'bar-orange'],
+    ['آماده تماس', counts.ready, 'bar-blue'],
+    ['سایر وضعیت‌ها', counts.other, 'bar-gray']
+  ];
+  panel.innerHTML = `
+    <div class="stats-total"><strong>${pd(tasks.length)}</strong><span>کل کارهای ثبت‌شده</span></div>
+    <section class="stats-section"><h3>تفکیک وضعیت کارها</h3>
+      ${statusRows.map(([label,n,cls]) => `<div class="bar-row"><span>${label}</span><div class="bar-track"><i class="${cls}" style="width:${n/maxStatus*100}%"></i></div><b>${pd(n)}</b></div>`).join('')}
+    </section>
+    <section class="stats-section"><h3>روزهای پرتراکم و کم‌کار</h3>
+      ${dates.length ? `<p><b>بیشترین کار:</b> ${busiest.map(x => `${dateLabel(x[0])} (${pd(x[1])})`).join('، ')}</p>
+      <p><b>کمترین کار در روزهای دارای فعالیت:</b> ${quietest.map(x => `${dateLabel(x[0])} (${pd(x[1])})`).join('، ')}</p>` : '<p class="stat">هنوز کاری ثبت نشده است.</p>'}
+    </section>
+    <section class="stats-section"><h3>تعداد کارهای هر ماه</h3>
+      ${months.length ? months.map(([mk,n]) => { const [y,m]=mk.split('/').map(Number); return `<div class="bar-row month-row"><span>${MONTHS[m-1]} ${pd(y)}</span><div class="bar-track"><i class="bar-blue" style="width:${n/maxMonth*100}%"></i></div><b>${pd(n)}</b></div>`; }).join('') : '<p class="stat">داده‌ای برای نمایش وجود ندارد.</p>'}
+    </section>`;
+  $('#dlg').appendChild(panel);
+  showOverlay();
+}
+
+/* ================= پشتیبان‌گیری ================= */
+function backup() {
+  const blob = new Blob([JSON.stringify(tasks, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `taskcal-backup-${key(TY, TM, TD).replace(/\//g, '-')}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function restore(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const data = JSON.parse(rd.result);
+      if (!Array.isArray(data) || data.some(t => !t || !t.id || !t.name || !t.date)) throw new Error('bad');
+      if (!confirm(`${pd(data.length)} کار از فایل خوانده شد. جایگزین کارهای فعلی شود؟`)) return;
+      tasks = data; persist(); render();
+    } catch (e) { alert('فایل پشتیبان معتبر نیست.'); }
+  };
+  rd.readAsText(file);
+}
+
+/* ================= رویدادها ================= */
+$('#weekdays').innerHTML = WD.map((w, i) => `<div class="${i === 6 ? 'fri' : ''}">${w}</div>`).join('');
+$('#pkWd').innerHTML = WD.map(w => `<div>${w.slice(0, 1)}</div>`).join('');
+$('#provinces').innerHTML = PROVINCES.map(p => `<option>${p}</option>`).join('');
+
+$('#btnNext').onclick = () => shiftMonth(1);
+$('#btnPrev').onclick = () => shiftMonth(-1);
+$('#btnToday').onclick = () => { view = [TY, TM]; render(); };
+$('#btnBackup').onclick = backup;
+$('#fileRestore').onchange = e => { if (e.target.files[0]) restore(e.target.files[0]); e.target.value = ''; };
+
+$('#grid').addEventListener('click', e => {
+  const add = e.target.closest('[data-add]'), chip = e.target.closest('.chip'), more = e.target.closest('[data-more]');
+  const day = e.target.closest('.day[data-date]');
+  if (add) openEditor(null, add.dataset.add);
+  else if (chip) openEditor(chip.dataset.id);
+  else if (more && !more.classList.contains('zero')) openDayList(more.dataset.more);
+  else if (day) openDayList(day.dataset.date);
+});
+$('#dlg').addEventListener('click', e => {
+  const chip = e.target.closest('#dayList .chip'), add = e.target.closest('#dayList [data-add]');
+  if (chip) openEditor(chip.dataset.id);
+  else if (add) openEditor(null, add.dataset.add);
+});
+
+$('#btnSave').onclick = saveTask;
+$('#btnActivityToggle').onclick = () => { $('#activityComposer').hidden = !$('#activityComposer').hidden; };
+$('#btnActivityApply').onclick = applyActivityNote;
+$('#btnDelete').onclick = deleteTask;
+$('#btnCancel').onclick = closeDlg;
+$('#btnClose').onclick = closeDlg;
+$('#ov').addEventListener('mousedown', e => { if (e.target === $('#ov')) closeDlg(); });
+
+$('#fDate').onclick = () => {
+  const p = $('#picker');
+  if (p.hidden) { const v = $('#fDate').dataset.value; pv = v ? parseKey(v).slice(0, 2) : [TY, TM]; renderPicker(); }
+  p.hidden = !p.hidden;
+  if (!p.hidden) p.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+};
+$('#pkNext').onclick = () => shiftPicker(1);
+$('#pkPrev').onclick = () => shiftPicker(-1);
+$('#pkGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-pick]');
+  if (b) { setDate(b.dataset.pick); $('#picker').hidden = true; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (!$('#picker').hidden) $('#picker').hidden = true; else closeDlg(); return; }
+  if ($('#ov').hidden && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    if (e.key === 'ArrowLeft') shiftMonth(1);       // در صفحه‌ی راست‌به‌چپ، چپ = ماه بعد
+    if (e.key === 'ArrowRight') shiftMonth(-1);
+  }
+});
+
+$('#btnStats').onclick = showStats;
+$('#globalSearch').addEventListener('input', e => renderSearchResults(e.target.value));
+$('#searchResults').addEventListener('click', e => {
+  const hit = e.target.closest('[data-search-id]');
+  if (!hit) return;
+  $('#searchResults').hidden = true;
+  $('#globalSearch').value = '';
+  openEditor(hit.dataset.searchId);
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.top')) $('#searchResults').hidden = true;
+});
+
+render();
