@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f6b78">
+  <title>مدیریت فعالیت‌های بیمارستان‌ها</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">م</div><div><strong>مدیریت بیمارستان‌ها</strong><small>سامانه شخصی پیگیری و فعالیت‌ها</small></div></div>
+    <div class="top-actions">
+      <span id="saveState" class="save-state"><i></i> ذخیره روی همین دستگاه</span>
+      <button class="btn btn-light" id="importBtn">ورود فایل اکسل</button>
+      <button class="btn btn-primary" id="exportBtn">خروجی اکسل</button>
+      <input id="fileInput" type="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div><div class="eyebrow">پنل مدیریت شخصی</div><h1>همه پیگیری‌ها، یک‌جا و منظم</h1><p>نتیجه تماس‌ها را با چند تیک ثبت کن؛ فقط نکات ضروری را بنویس و پیگیری‌ها را از دست نده.</p></div>
+      <button class="btn btn-add" id="addBtn"><span>＋</span> ثبت فعالیت جدید</button>
+    </section>
+
+    <section class="stats" id="stats">
+      <article class="stat-card"><span class="stat-icon blue">▤</span><div><small>کل فعالیت‌ها</small><strong id="totalCount">۰</strong></div></article>
+      <article class="stat-card"><span class="stat-icon orange">◷</span><div><small>یادآوری‌های امروز</small><strong id="todayCount">۰</strong></div></article>
+      <article class="stat-card"><span class="stat-icon red">!</span><div><small>عقب‌افتاده</small><strong id="lateCount">۰</strong></div></article>
+      <article class="stat-card"><span class="stat-icon green">✓</span><div><small>انجام‌شده</small><strong id="doneCount">۰</strong></div></article>
+    </section>
+
+    <section class="toolbar panel">
+      <div class="searchbox"><span>⌕</span><input id="searchInput" placeholder="جستجو در نام بیمارستان، توضیحات، شماره تماس، برچسب..." autocomplete="off"></div>
+      <div class="filters">
+        <select id="statusFilter"><option value="all">همه وضعیت‌ها</option><option value="open">در انتظار انجام</option><option value="today">یادآوری امروز</option><option value="late">عقب‌افتاده</option><option value="done">انجام‌شده</option><option value="no-date">بدون یادآوری</option></select>
+        <select id="boardFilter"><option value="">همه بوردها</option></select>
+        <select id="tagFilter"><option value="">همه برچسب‌ها</option></select>
+        <select id="sortSelect"><option value="reminder">مرتب‌سازی: نزدیک‌ترین یادآوری</option><option value="newest">جدیدترین فعالیت</option><option value="oldest">قدیمی‌ترین فعالیت</option><option value="title">عنوان فعالیت</option></select>
+      </div>
+    </section>
+
+    <section class="list-head"><div><h2>فهرست فعالیت‌ها</h2><span id="resultCount">۰ مورد</span></div><div class="list-tools"><button class="btn btn-outline" id="clearFilters">پاک‌کردن فیلترها</button><button class="btn btn-outline" id="templateBtn">دانلود قالب اکسل</button></div></section>
+    <section class="panel table-panel">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>وضعیت</th><th>عنوان فعالیت / بیمارستان</th><th>چک‌لیست انجام‌شده</th><th>توضیحات و سوابق</th><th>یادآوری</th><th>برچسب</th><th>لیست بورد</th><th>عملیات</th></tr></thead>
+          <tbody id="taskBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="emptyState" hidden><div class="empty-icon">▤</div><strong>موردی پیدا نشد</strong><p>فیلترها را تغییر بده یا یک فعالیت جدید ثبت کن.</p></div>
+      <div class="table-foot"><span id="rangeInfo">نمایش ۰ مورد</span><div class="pagination"><button id="prevPage">قبلی</button><span id="pageInfo">۱ / ۱</span><button id="nextPage">بعدی</button></div></div>
+    </section>
+    <section class="bottom-note"><span>ⓘ</span> اطلاعات در حافظه همین مرورگر ذخیره می‌شود. برای اطمینان، مرتباً خروجی اکسل بگیر.</section>
+  </main>
+
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head"><div><h2 id="modalTitle">ثبت فعالیت جدید</h2><p>با چند تیک نتیجه تماس را ثبت کن؛ توضیحات فقط برای موارد خاص است.</p></div><button class="icon-btn" id="closeModal" aria-label="بستن">×</button></div>
+      <form id="taskForm">
+        <input type="hidden" id="editId">
+        <div class="form-grid">
+          <label class="span-2">عنوان فعالیت / نام بیمارستان *<input id="fTitle" required maxlength="500" placeholder="مثلاً بیمارستان ..."></label>
+          <div class="span-2 checklist-wrap">
+            <div class="checklist-heading"><div><strong>ثبت سریع نتیجه تماس</strong><small>فقط مواردی را که انجام شده یا درباره‌شان اطلاعات داری تیک بزن.</small></div><button type="button" class="mini-btn" id="clearChecks">پاک‌کردن تیک‌ها</button></div>
+            <div class="check-groups">
+              <fieldset class="check-group"><legend>وضعیت تماس</legend><div class="check-options">
+                <label><input type="checkbox" name="activityCheck" value="تماس گرفته شد"> تماس گرفته شد</label>
+                <label><input type="checkbox" name="activityCheck" value="تماس بی‌پاسخ"> تماس بی‌پاسخ</label>
+                <label><input type="checkbox" name="activityCheck" value="خط اشغال بود"> خط اشغال بود</label>
+                <label><input type="checkbox" name="activityCheck" value="تلفن خاموش بود"> تلفن خاموش بود</label>
+                <label><input type="checkbox" name="activityCheck" value="شماره اشتباه بود"> شماره اشتباه بود</label>
+              </div></fieldset>
+              <fieldset class="check-group"><legend>با چه کسی صحبت شد؟</legend><div class="check-options">
+                <label><input type="checkbox" name="activityCheck" value="اپراتور"> اپراتور</label>
+                <label><input type="checkbox" name="activityCheck" value="مسئول تجهیزات پزشکی"> مسئول تجهیزات پزشکی</label>
+                <label><input type="checkbox" name="activityCheck" value="مسئول رادیولوژی"> مسئول رادیولوژی</label>
+                <label><input type="checkbox" name="activityCheck" value="مدیر بیمارستان"> مدیر بیمارستان</label>
+                <label><input type="checkbox" name="activityCheck" value="مسئول خرید"> مسئول خرید</label>
+                <label><input type="checkbox" name="activityCheck" value="مسئول فنی"> مسئول فنی</label>
+              </div></fieldset>
+              <fieldset class="check-group"><legend>نتیجه و اقدام</legend><div class="check-options">
+                <label><input type="checkbox" name="activityCheck" value="معرفی مانیتور پزشکی"> معرفی مانیتور پزشکی</label>
+                <label><input type="checkbox" name="activityCheck" value="کاتالوگ ارسال شد"> کاتالوگ ارسال شد</label>
+                <label><input type="checkbox" name="activityCheck" value="پیش‌فاکتور ارسال شد"> پیش‌فاکتور ارسال شد</label>
+                <label><input type="checkbox" name="activityCheck" value="مشتری علاقه‌مند است"> مشتری علاقه‌مند است</label>
+                <label><input type="checkbox" name="activityCheck" value="فعلاً نیاز به خرید ندارد"> فعلاً نیاز به خرید ندارد</label>
+                <label><input type="checkbox" name="activityCheck" value="منتظر تصمیم مشتری هستیم"> منتظر تصمیم مشتری هستیم</label>
+                <label><input type="checkbox" name="activityCheck" value="پیگیری لازم است"> پیگیری لازم است</label>
+              </div></fieldset>
+              <fieldset class="check-group"><legend>بخش‌ها و تجهیزات تصویربرداری</legend><div class="check-options">
+                <label><input type="checkbox" name="activityCheck" value="رادیولوژی"> رادیولوژی</label>
+                <label><input type="checkbox" name="activityCheck" value="سونوگرافی"> سونوگرافی</label>
+                <label><input type="checkbox" name="activityCheck" value="ماموگرافی"> ماموگرافی</label>
+                <label><input type="checkbox" name="activityCheck" value="CT Scan"> CT Scan</label>
+                <label><input type="checkbox" name="activityCheck" value="MRI"> MRI</label>
+                <label><input type="checkbox" name="activityCheck" value="PACS"> PACS</label>
+                <label><input type="checkbox" name="activityCheck" value="مانیتور پزشکی"> مانیتور پزشکی</label>
+              </div></fieldset>
+            </div>
+          </div>
+          <label class="span-2">توضیحات ضروری (اختیاری)<textarea id="fDesc" rows="3" placeholder="مثلاً نام مسئول، شماره مستقیم، مدل مانیتور یا نکته خاص..."></textarea></label>
+          <label>ایجاد کننده<input id="fCreator" placeholder="نام ایجادکننده"></label>
+          <label>انجام دهنده<input id="fAssignee" placeholder="نام مسئول انجام"></label>
+          <label>زمان ایجاد<input id="fCreated" placeholder="۱۴۰۵/۰۸/۱۶ ۱۰:۳۰"></label>
+          <label class="span-2">زمان یادآوری<input id="fReminder" placeholder="۱۴۰۵/۰۸/۱۹ ۱۹:۳۰"><div class="quick-dates"><button type="button" class="mini-btn" data-days="0">امروز</button><button type="button" class="mini-btn" data-days="1">فردا</button><button type="button" class="mini-btn" data-days="3">۳ روز بعد</button><button type="button" class="mini-btn" data-days="7">هفته بعد</button></div></label>
+          <label>زمان انجام<input id="fDone" placeholder="در صورت انجام، تاریخ را وارد کن"></label>
+          <label>برچسب<input id="fTag" placeholder="مثلاً تماس بی‌پاسخ"></label>
+          <label>تاخیر بر اساس روز<input id="fDelayDays" placeholder="—"></label>
+          <label>تاخیر بر اساس ساعت<input id="fDelayHours" placeholder="—"></label>
+          <label class="span-2">لیست بورد<input id="fBoard" placeholder="مثلاً بیمارستان / ارسال کاتالوگ"></label>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" id="cancelModal">انصراف</button><button type="submit" class="btn btn-primary">ذخیره فعالیت</button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="script.js"></script>
+</body>
+</html>
